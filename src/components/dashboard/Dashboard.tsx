@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react';
-import { Upload, FileText, Briefcase, BarChart3 } from 'lucide-react';
+import React, { useState } from 'react';
+import { FileText, Briefcase, BarChart3 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card';
 import { ResumeUploader } from './ResumeUploader';
@@ -8,6 +8,7 @@ import { MatchResults } from './MatchResults';
 import { MatchHistory } from './MatchHistory';
 import type { ParsedResume, JobDescription, MatchResult } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
+import { analyzeMatchWithGemini, isGeminiConfigured } from '../../lib/gemini';
 
 export const Dashboard: React.FC = () => {
   const [currentResume, setCurrentResume] = useState<ParsedResume | null>(null);
@@ -15,6 +16,7 @@ export const Dashboard: React.FC = () => {
   const [matchResult, setMatchResult] = useState<MatchResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [matchHistory, setMatchHistory] = useState<MatchResult[]>([]);
+  const [error, setError] = useState<string | null>(null);
   const { user } = useAuth();
 
   const handleResumeUpload = async (resume: ParsedResume) => {
@@ -31,12 +33,18 @@ export const Dashboard: React.FC = () => {
     if (!currentResume || !currentJobDescription) return;
 
     setIsAnalyzing(true);
+    setError(null);
     
     try {
-      // Simulate analysis delay
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      
-      const result = await analyzeMatch(currentResume, currentJobDescription);
+      let result: MatchResult;
+      if (isGeminiConfigured()) {
+        result = await analyzeMatchWithGemini(currentResume, currentJobDescription, user?.id);
+      } else {
+        // Fallback to local heuristic if Gemini is not configured
+        // Simulate analysis delay for UX consistency
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        result = await analyzeMatch(currentResume, currentJobDescription);
+      }
       setMatchResult(result);
       
       // Add to history
@@ -44,6 +52,7 @@ export const Dashboard: React.FC = () => {
       
     } catch (error) {
       console.error('Error analyzing match:', error);
+      setError(error instanceof Error ? error.message : 'Failed to analyze match');
     } finally {
       setIsAnalyzing(false);
     }
@@ -261,6 +270,16 @@ export const Dashboard: React.FC = () => {
               <BarChart3 className="h-5 w-5 mr-2" />
               {isAnalyzing ? 'Analyzing Match...' : 'Analyze Compatibility'}
             </Button>
+            {!isGeminiConfigured() && (
+              <p className="mt-2 text-sm text-gray-500">
+                Tip: Add VITE_GEMINI_API_KEY to enable AI-powered dynamic analysis.
+              </p>
+            )}
+            {error && (
+              <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-red-700 text-sm">{error}</p>
+              </div>
+            )}
           </div>
         )}
 

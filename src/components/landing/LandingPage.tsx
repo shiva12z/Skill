@@ -59,11 +59,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted }) => {
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Button 
+                variant="white"
                 size="lg" 
                 onClick={onGetStarted}
-                className="bg-white text-blue-600 hover:bg-gray-50 shadow-lg"
               >
-                Get Started Free
+                Login
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
               <Button 
@@ -173,9 +173,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted }) => {
             Join thousands of professionals who have improved their job search success with SkillSyncer.
           </p>
           <Button 
+            variant="white"
             size="lg" 
             onClick={onGetStarted}
-            className="bg-white text-blue-600 hover:bg-gray-50 shadow-lg"
           >
             Start Matching Now
             <ArrowRight className="ml-2 h-5 w-5" />
