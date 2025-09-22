@@ -3,6 +3,7 @@ import { TrendingUp, CheckCircle, AlertCircle, XCircle, Lightbulb } from 'lucide
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card';
 import { formatScore, getScoreColor, getScoreBgColor } from '../../lib/utils';
 import type { MatchResult } from '../../types';
+import ClassicPieChart from '../charts/ClassicPieChart';
 
 interface MatchResultsProps {
   result: MatchResult;
@@ -23,7 +24,7 @@ export const MatchResults: React.FC<MatchResultsProps> = ({ result }) => {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid md:grid-cols-2 gap-8">
+          <div className="grid md:grid-cols-2 gap-8 items-center">
             {/* Overall Score */}
             <div className="text-center">
               <div className={`inline-flex items-center justify-center w-32 h-32 rounded-full ${scoreBgColor} mb-4`}>
@@ -40,9 +41,20 @@ export const MatchResults: React.FC<MatchResultsProps> = ({ result }) => {
             </div>
 
             {/* Score Breakdown */}
-            <div className="space-y-4">
-              <h4 className="text-lg font-semibold text-gray-900">Score Breakdown</h4>
-              
+            <div className="space-y-3">
+              <h4 className="text-lg font-semibold text-gray-900 text-center">Score Breakdown</h4>
+              <div className="flex justify-center">
+                <ClassicPieChart
+                  data={[
+                    { label: 'Skills', value: result.feedback.skill_score, color: '#2563EB' },
+                    { label: 'Experience', value: result.feedback.experience_score, color: '#059669' },
+                    { label: 'Education', value: result.feedback.education_score, color: '#EA580C' },
+                  ]}
+                  size={220}
+                  separatorWidth={2}
+                  showLabels={true}
+                />
+              </div>
               <div className="space-y-3">
                 <div>
                   <div className="flex justify-between items-center mb-1">

@@ -6,9 +6,10 @@ import { ResumeUploader } from './ResumeUploader';
 import { JobDescriptionForm } from './JobDescriptionForm';
 import { MatchResults } from './MatchResults';
 import { MatchHistory } from './MatchHistory';
-import type { ParsedResume, JobDescription, MatchResult } from '../../types';
+import type { ParsedResume, JobDescription, MatchResult, ResumeAnalysisResult } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
-import { analyzeMatchWithGemini, isGeminiConfigured } from '../../lib/gemini';
+import { analyzeMatchWithGemini, isGeminiConfigured, analyzeResumeWithGemini, analyzeResumeHeuristic } from '../../lib/gemini';
+import { ResumeInsights } from './ResumeInsights';
 
 export const Dashboard: React.FC = () => {
   const [currentResume, setCurrentResume] = useState<ParsedResume | null>(null);
@@ -17,11 +18,14 @@ export const Dashboard: React.FC = () => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [matchHistory, setMatchHistory] = useState<MatchResult[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [resumeAnalysis, setResumeAnalysis] = useState<ResumeAnalysisResult | null>(null);
+  const [industry, setIndustry] = useState<string>('general');
   const { user } = useAuth();
 
   const handleResumeUpload = async (resume: ParsedResume) => {
     setCurrentResume(resume);
     setMatchResult(null);
+    setResumeAnalysis(null);
   };
 
   const handleJobDescriptionSubmit = (jobDescription: JobDescription) => {
@@ -46,6 +50,7 @@ export const Dashboard: React.FC = () => {
         result = await analyzeMatch(currentResume, currentJobDescription);
       }
       setMatchResult(result);
+      setResumeAnalysis(null);
       
       // Add to history
       setMatchHistory(prev => [result, ...prev]);
@@ -53,6 +58,28 @@ export const Dashboard: React.FC = () => {
     } catch (error) {
       console.error('Error analyzing match:', error);
       setError(error instanceof Error ? error.message : 'Failed to analyze match');
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const handleAnalyzeResumeOnly = async () => {
+    if (!currentResume) return;
+    setIsAnalyzing(true);
+    setError(null);
+    try {
+      let analysis: ResumeAnalysisResult;
+      if (isGeminiConfigured()) {
+        analysis = await analyzeResumeWithGemini(currentResume, user?.id, industry);
+      } else {
+        await new Promise((r) => setTimeout(r, 1200));
+        analysis = analyzeResumeHeuristic(currentResume, user?.id, industry);
+      }
+      setResumeAnalysis(analysis);
+      setMatchResult(null);
+    } catch (err) {
+      console.error('Error analyzing resume:', err);
+      setError(err instanceof Error ? err.message : 'Failed to analyze resume');
     } finally {
       setIsAnalyzing(false);
     }
@@ -258,25 +285,64 @@ export const Dashboard: React.FC = () => {
           </Card>
         </div>
 
-        {/* Analyze Button */}
-        {currentResume && currentJobDescription && (
-          <div className="mb-8 text-center">
-            <Button
-              size="lg"
-              onClick={handleAnalyze}
-              isLoading={isAnalyzing}
-              className="px-8"
-            >
-              <BarChart3 className="h-5 w-5 mr-2" />
-              {isAnalyzing ? 'Analyzing Match...' : 'Analyze Compatibility'}
-            </Button>
+        {/* Industry Selector */}
+        <div className="mb-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-gray-900">Industry Focus (optional)</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="text-sm text-gray-700">Tailor suggestions for:</label>
+                <select
+                  value={industry}
+                  onChange={(e) => setIndustry(e.target.value)}
+                  className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="general">General</option>
+                  <option value="cloud">Cloud / DevOps</option>
+                  <option value="mobile">Mobile</option>
+                  <option value="data">Data / ML</option>
+                </select>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Analyze Buttons */}
+        {currentResume && (
+          <div className="mb-8 flex flex-col items-center gap-3">
+            <div className="flex flex-wrap gap-3 justify-center">
+              <Button
+                size="lg"
+                onClick={handleAnalyzeResumeOnly}
+                isLoading={isAnalyzing}
+                className="px-6"
+                variant="secondary"
+              >
+                <BarChart3 className="h-5 w-5 mr-2" />
+                {isAnalyzing ? 'Analyzing...' : 'Suggest Roles from Resume'}
+              </Button>
+
+              {currentJobDescription && (
+                <Button
+                  size="lg"
+                  onClick={handleAnalyze}
+                  isLoading={isAnalyzing}
+                  className="px-6"
+                >
+                  <BarChart3 className="h-5 w-5 mr-2" />
+                  {isAnalyzing ? 'Analyzing...' : 'Analyze Compatibility'}
+                </Button>
+              )}
+            </div>
             {!isGeminiConfigured() && (
-              <p className="mt-2 text-sm text-gray-500">
+              <p className="mt-1 text-sm text-gray-500 text-center">
                 Tip: Add VITE_GEMINI_API_KEY to enable AI-powered dynamic analysis.
               </p>
             )}
             {error && (
-              <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+              <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-lg max-w-xl w-full">
                 <p className="text-red-700 text-sm">{error}</p>
               </div>
             )}
@@ -284,6 +350,11 @@ export const Dashboard: React.FC = () => {
         )}
 
         {/* Results */}
+        {resumeAnalysis && (
+          <div className="mb-8">
+            <ResumeInsights analysis={resumeAnalysis} />
+          </div>
+        )}
         {matchResult && (
           <div className="mb-8">
             <MatchResults result={matchResult} />
