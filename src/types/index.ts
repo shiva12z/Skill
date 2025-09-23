@@ -67,6 +67,9 @@ export interface MatchResult {
   missing_skills: string[];
   feedback: MatchFeedback;
   recommendations: string[];
+  course_recommendations?: CourseRecommendation[]; // optional: enriched client-side
+  missing_keywords?: string[]; // optional: keywords from JD not present in resume
+  resume_improvements?: string[]; // optional: actionable suggestions to improve resume
   created_at: string;
 }
 

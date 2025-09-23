@@ -1,8 +1,8 @@
 import React from 'react';
-import { TrendingUp, CheckCircle, AlertCircle, XCircle, Lightbulb } from 'lucide-react';
+import { TrendingUp, CheckCircle, AlertCircle, XCircle, Lightbulb, GraduationCap, Tag, ClipboardList } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card';
 import { formatScore, getScoreColor, getScoreBgColor } from '../../lib/utils';
-import type { MatchResult } from '../../types';
+import type { MatchResult, CourseRecommendation } from '../../types';
 import ClassicPieChart from '../charts/ClassicPieChart';
 
 interface MatchResultsProps {
@@ -230,6 +230,98 @@ export const MatchResults: React.FC<MatchResultsProps> = ({ result }) => {
           </ul>
         </CardContent>
       </Card>
+
+      {/* Course Recommendations for Missing Skills (Grouped) */}
+      {Array.isArray(result.course_recommendations) && result.course_recommendations.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center text-indigo-600">
+              <GraduationCap className="h-5 w-5 mr-2" />
+              Courses to Learn Missing Skills
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-5">
+              {Array.from(
+                result.course_recommendations.reduce((map, c) => {
+                  const key = (c.skill || '').toString();
+                  if (!map.has(key)) map.set(key, [] as CourseRecommendation[]);
+                  map.get(key)!.push(c);
+                  return map;
+                }, new Map<string, CourseRecommendation[]>())
+              ).map(([skill, courses]) => (
+                <div key={skill}>
+                  <h4 className="text-sm font-semibold text-gray-800 mb-2">Skill: {skill}</h4>
+                  <ul className="space-y-3">
+                    {courses.map((course, index) => (
+                      <li key={`${skill}-${course.url}-${index}`} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-3 p-3 border border-gray-200 rounded-md">
+                        <div>
+                          <p className="text-gray-900 font-medium">
+                            <a href={course.url} target="_blank" rel="noreferrer" className="hover:underline">
+                              {course.title}
+                            </a>
+                          </p>
+                          <p className="text-sm text-gray-600">Provider: {course.provider}</p>
+                        </div>
+                        <div>
+                          <a
+                            href={course.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-md"
+                          >
+                            View Course
+                          </a>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Missing Keywords from Job Description */}
+      {Array.isArray(result.missing_keywords) && result.missing_keywords.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center text-rose-600">
+              <Tag className="h-5 w-5 mr-2" />
+              Missing Keywords (from Job Description)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-2">
+              {result.missing_keywords.slice(0, 30).map((kw, i) => (
+                <span key={`${kw}-${i}`} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-800">
+                  {kw}
+                </span>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Actionable Resume Improvements */}
+      {Array.isArray(result.resume_improvements) && result.resume_improvements.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center text-emerald-700">
+              <ClipboardList className="h-5 w-5 mr-2" />
+              What to Improve in Your Resume
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-2 list-disc list-inside text-gray-700">
+              {result.resume_improvements.map((tip, i) => (
+                <li key={i}>{tip}</li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 };

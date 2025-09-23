@@ -1,4 +1,5 @@
 import type { ParsedResume, JobDescription, MatchResult, ResumeAnalysisResult, SuggestedRole, CourseRecommendation } from '../types';
+import { getCoursesForSkills } from './courses';
 
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 const GEMINI_MODEL = 'gemini-1.5-flash-latest';
@@ -164,112 +165,99 @@ export async function analyzeResumeWithGemini(
 
 // Heuristic fallback if Gemini is not configured
 export function analyzeResumeHeuristic(resume: ParsedResume, userId?: string, industry?: string): ResumeAnalysisResult {
-  const skills = resume.skills.map((s) => s.toLowerCase());
-  const has = (k: string) => skills.some((s) => s.includes(k));
+  // Normalize skills from resume top-level and experience items
+  const norm = (s: string) => s.trim().toLowerCase();
+  const baseSkills = (resume.skills || []).map(norm);
+  const expSkills = (resume.experience || []).flatMap((e) => (e.skills || []).map(norm));
+  const allSkills = Array.from(new Set<string>([...baseSkills, ...expSkills]));
+  const has = (kw: string | RegExp) =>
+    allSkills.some((s) => (kw instanceof RegExp ? kw.test(s) : s.includes(kw)));
 
-  const roleCandidates: SuggestedRole[] = [];
+  type RoleDef = {
+    title: string;
+    required: string[]; // core skills
+    niceToHave: string[]; // bonus
+    industry?: 'general' | 'cloud' | 'mobile' | 'data';
+  };
 
-  if (industry === 'mobile') {
-    if (has('react native') || has('android') || has('kotlin') || has('swift') || has('ios')) {
-      roleCandidates.push({
-        title: 'Mobile Developer',
-        match_score: 78,
-        reasons: ['Mobile stack skills detected', 'Experience building mobile apps'],
-        recommended_courses: [
-          { title: 'Android with Kotlin', provider: 'Udemy', url: 'https://www.udemy.com', skill: 'Android/Kotlin' },
-          { title: 'iOS Development with Swift', provider: 'Coursera', url: 'https://www.coursera.org', skill: 'iOS/Swift' },
-        ],
-      });
+  const catalog: RoleDef[] = [
+    { title: 'Frontend Developer', required: ['react', 'javascript', 'html', 'css'], niceToHave: ['typescript', 'next.js', 'redux'], industry: 'general' },
+    { title: 'Backend Developer', required: ['node', 'api', 'rest'], niceToHave: ['express', 'postgres', 'mongodb', 'docker'], industry: 'general' },
+    { title: 'Full Stack Developer', required: ['react', 'node'], niceToHave: ['typescript', 'next.js', 'postgres', 'mongodb'], industry: 'general' },
+    { title: 'Cloud/DevOps Engineer', required: ['docker', 'kubernetes'], niceToHave: ['aws', 'azure', 'gcp', 'ci/cd', 'terraform'], industry: 'cloud' },
+    { title: 'Data Scientist', required: ['python', 'ml', 'pandas'], niceToHave: ['numpy', 'scikit', 'tensorflow', 'pytorch', 'sql'], industry: 'data' },
+    { title: 'Data Engineer', required: ['sql'], niceToHave: ['spark', 'airflow', 'kafka', 'aws', 'gcp', 'azure'], industry: 'data' },
+    { title: 'Data Analyst', required: ['sql'], niceToHave: ['excel', 'tableau', 'power bi', 'python', 'pandas'], industry: 'data' },
+    { title: 'Mobile Developer', required: ['react native'], niceToHave: ['android', 'kotlin', 'swift', 'ios'], industry: 'mobile' },
+    { title: 'Software Engineer', required: ['git'], niceToHave: ['algorithms', 'data structures', 'system design'], industry: 'general' },
+  ];
+
+  const scored: SuggestedRole[] = catalog.map((role) => {
+    // Compute coverage of required and nice-to-have using substring match
+    const presentReq = role.required.filter((k) => has(k));
+    const missingReq = role.required.filter((k) => !has(k));
+    const presentNice = role.niceToHave.filter((k) => has(k));
+
+    // Required contributes 70% of score, nice-to-have contributes 30%
+    const reqScore = role.required.length > 0 ? (presentReq.length / role.required.length) * 70 : 0;
+    const niceScore = role.niceToHave.length > 0 ? (presentNice.length / role.niceToHave.length) * 30 : 0;
+    let match = Math.round(Math.min(100, reqScore + niceScore));
+
+    // Industry alignment small boost
+    if (industry && role.industry && industry === role.industry) {
+      match = Math.min(100, match + 5);
     }
-  }
 
-  if (industry === 'cloud') {
-    if (has('aws') || has('gcp') || has('azure') || has('docker') || has('kubernetes') || has('devops')) {
-      roleCandidates.push({
-        title: 'Cloud/DevOps Engineer',
-        match_score: 79,
-        reasons: ['Cloud platform experience present', 'CI/CD and containerization experience'],
-        recommended_courses: [
-          { title: 'AWS Solutions Architect', provider: 'Coursera', url: 'https://www.coursera.org', skill: 'AWS' },
-          { title: 'Kubernetes Fundamentals', provider: 'edX', url: 'https://www.edx.org', skill: 'Kubernetes' },
-        ],
-      });
+    const reasons: string[] = [];
+    if (presentReq.length > 0) {
+      reasons.push(`Core strengths: ${presentReq.slice(0, 3).join(', ')}`);
     }
-  }
-
-  if (industry === 'data') {
-    if (has('python') || has('pandas') || has('numpy') || has('sql') || has('ml') || has('machine learning')) {
-      roleCandidates.push({
-        title: 'Data Scientist',
-        match_score: 75,
-        reasons: ['Python/ML stack present', 'Analytical projects or experience'],
-        recommended_courses: [
-          { title: 'Machine Learning', provider: 'Coursera', url: 'https://www.coursera.org', skill: 'ML' },
-          { title: 'Data Science with Python', provider: 'edX', url: 'https://www.edx.org', skill: 'Data Science' },
-        ],
-      });
-      roleCandidates.push({
-        title: 'Data Engineer',
-        match_score: 72,
-        reasons: ['SQL/ETL experience', 'Cloud or big data tools likely relevant'],
-        recommended_courses: [
-          { title: 'Data Engineering on Google Cloud', provider: 'Coursera', url: 'https://www.coursera.org', skill: 'Data Engineering' },
-        ],
-      });
+    if (presentNice.length > 0) {
+      reasons.push(`Bonus skills: ${presentNice.slice(0, 3).join(', ')}`);
     }
-  }
+    if (missingReq.length > 0) {
+      reasons.push(`Missing key skills: ${missingReq.slice(0, 2).join(', ')}`);
+    }
 
-  if (has('react') || has('frontend')) {
-    roleCandidates.push({
-      title: 'Frontend Developer',
-      match_score: 80,
-      reasons: ['Experience with React and modern JS', 'Strong UI skills indicated in resume'],
-      recommended_courses: [
-        { title: 'Advanced React', provider: 'Coursera', url: 'https://www.coursera.org', skill: 'React' },
-        { title: 'TypeScript Fundamentals', provider: 'Udemy', url: 'https://www.udemy.com', skill: 'TypeScript' },
-      ],
-    });
-  }
+    // Courses based on missing required skills primarily
+    const courses = getCoursesForSkills(missingReq.length > 0 ? missingReq : role.niceToHave.filter((k) => !presentNice.includes(k)).slice(0, 2), industry, 2);
 
-  if (has('node') || has('backend')) {
-    roleCandidates.push({
-      title: 'Backend Developer',
-      match_score: 72,
-      reasons: ['Node.js experience present', 'REST APIs development experience'],
-      recommended_courses: [
-        { title: 'Node.js Microservices', provider: 'Udemy', url: 'https://www.udemy.com', skill: 'Node.js' },
-        { title: 'Designing RESTful APIs', provider: 'edX', url: 'https://www.edx.org', skill: 'APIs' },
-      ],
-    });
-  }
+    const suggested: SuggestedRole = {
+      title: role.title,
+      match_score: match,
+      reasons,
+      recommended_courses: courses,
+    };
+    return suggested;
+  });
 
-  if (has('python') || has('ml') || has('data')) {
-    roleCandidates.push({
-      title: 'Data Analyst',
-      match_score: 68,
-      reasons: ['Python/SQL mentioned', 'Analytical experience inferred from resume'],
-      recommended_courses: [
-        { title: 'SQL for Data Analysis', provider: 'Coursera', url: 'https://www.coursera.org', skill: 'SQL' },
-        { title: 'Python Data Analysis', provider: 'edX', url: 'https://www.edx.org', skill: 'Python' },
-      ],
-    });
-  }
+  // Filter out very low scores and sort
+  let roleCandidates = scored
+    .filter((r) => r.match_score >= 40)
+    .sort((a, b) => b.match_score - a.match_score)
+    .slice(0, 5);
 
   if (roleCandidates.length === 0) {
-    roleCandidates.push({
-      title: 'Software Engineer',
-      match_score: 60,
-      reasons: ['General software skills present'],
-      recommended_courses: [
-        { title: 'System Design Basics', provider: 'Udemy', url: 'https://www.udemy.com', skill: 'System Design' },
-      ],
-    });
+    roleCandidates = scored.sort((a, b) => b.match_score - a.match_score).slice(0, 3);
   }
 
-  const skillScore = Math.min(100, skills.length * 8);
-  const experienceScore = 70; // heuristic
-  const educationScore = 80; // heuristic
-  const overall = Math.round(skillScore * 0.5 + experienceScore * 0.3 + educationScore * 0.2);
+  // Compute breakdown heuristics
+  const uniqueSkillCount = allSkills.length;
+  const topScore = roleCandidates[0]?.match_score ?? 50;
+  const avgRoleScore = Math.round(
+    roleCandidates.reduce((acc, r) => acc + r.match_score, 0) / (roleCandidates.length || 1)
+  );
+  const skillScore = Math.min(95, 20 + uniqueSkillCount * 5); // saturates at 95
+  const experienceScore = Math.min(90, 50 + (resume.experience?.length || 0) * 10);
+  const educationScore = 75; // simple heuristic baseline
+  const overall = Math.round(skillScore * 0.4 + avgRoleScore * 0.4 + educationScore * 0.2);
+
+  const strengths: string[] = [];
+  if (topScore >= 70) strengths.push('Strong fit for at least one role based on skill coverage');
+  if (uniqueSkillCount >= 6) strengths.push('Broad set of relevant skills');
+
+  const weaknesses: string[] = [];
+  if (avgRoleScore < 65) weaknesses.push('Some key skills for target roles are missing');
 
   return {
     id: Date.now().toString(),
@@ -280,9 +268,9 @@ export function analyzeResumeHeuristic(resume: ParsedResume, userId?: string, in
       experience_score: Math.round(experienceScore),
       education_score: Math.round(educationScore),
     },
-    strengths: ['Solid foundation of core skills', 'Relevant experience highlighted'],
-    weaknesses: ['Some advanced skills may be missing compared to role expectations'],
-    suggested_roles: roleCandidates.sort((a, b) => b.match_score - a.match_score),
+    strengths,
+    weaknesses,
+    suggested_roles: roleCandidates,
     created_at: new Date().toISOString(),
   };
 }
